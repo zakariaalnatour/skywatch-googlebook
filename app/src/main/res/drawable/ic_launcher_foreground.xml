@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Geodesic flight arc -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M24,78 Q50,42 82,28"
+        android:strokeWidth="2.4"
+        android:strokeColor="#8838BDF8"
+        android:strokeLineCap="round" />
+    <!-- Target ping dots -->
+    <path
+        android:fillColor="#FF22C55E"
+        android:pathData="M31,70 m-2.8,0 a2.8,2.8 0 1,0 5.6,0 a2.8,2.8 0 1,0 -5.6,0" />
+    <path
+        android:fillColor="#FFFACC15"
+        android:pathData="M78,31 m-2.4,0 a2.4,2.4 0 1,0 4.8,0 a2.4,2.4 0 1,0 -4.8,0" />
+    <!-- Crisp jetliner silhouette banking northeast -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:rotation="42">
+        <path
+            android:fillColor="#FFF8FAFC"
+            android:pathData="M54,26 L58,41 L77,52 L77,56.5 L58,50.5 L57,66 L64,71.5 L64,75 L54,71.5 L44,75 L44,71.5 L51,66 L50,50.5 L31,56.5 L31,52 L50,41 Z" />
+        <path
+            android:fillColor="#FF38BDF8"
+            android:pathData="M54,26 L56,41 L54,67 L52,41 Z" />
+    </group>
+</vector>

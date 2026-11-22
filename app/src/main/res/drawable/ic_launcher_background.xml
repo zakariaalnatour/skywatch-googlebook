@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Deep obsidian aviation radar scope background -->
+    <path
+        android:fillColor="#FF070E1A"
+        android:pathData="M0,0h108v108h-108z" />
+    <!-- Outer radar range ring -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,14 A40,40 0 1,1 53.99,14 Z"
+        android:strokeWidth="1.2"
+        android:strokeColor="#3338BDF8" />
+    <!-- Mid radar range ring -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,26 A28,28 0 1,1 53.99,26 Z"
+        android:strokeWidth="1.2"
+        android:strokeColor="#5538BDF8" />
+    <!-- Inner radar range ring -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,38 A16,16 0 1,1 53.99,38 Z"
+        android:strokeWidth="1.2"
+        android:strokeColor="#7738BDF8" />
+    <!-- Radar crosshair axes -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,12 L54,96 M12,54 L96,54"
+        android:strokeWidth="0.9"
+        android:strokeColor="#2A38BDF8" />
+    <!-- Radar sweep wedge -->
+    <path
+        android:fillColor="#3038BDF8"
+        android:pathData="M54,54 L54,14 A40,40 0 0,1 89,34 Z" />
+</vector>

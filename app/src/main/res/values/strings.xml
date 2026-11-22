@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SkyWatch</string>
+    <string name="widget_name">SkyWatch Live Radar</string>
+    <string name="widget_description">Live Middle East &amp; global flight tracker radar widget for Googlebook OS</string>
+</resources>
