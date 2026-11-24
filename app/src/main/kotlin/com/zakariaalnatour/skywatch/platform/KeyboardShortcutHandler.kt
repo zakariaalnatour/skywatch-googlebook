@@ -53,6 +53,7 @@ object KeyboardShortcutHandler {
     isShiftPressed: Boolean,
     isAltPressed: Boolean,
     isSearchFieldFocused: Boolean,
+    unicodeChar: Int = 0,
   ): SkyWatchShortcutAction? {
     if (isAltPressed) return null
 
@@ -60,20 +61,38 @@ object KeyboardShortcutHandler {
       return SkyWatchShortcutAction.ClearOrDismiss
     }
 
+    val char = if (unicodeChar > 0) unicodeChar.toChar() else '\u0000'
+
     if (isCtrlPressed) {
+      when (char) {
+        '+', '=' -> return SkyWatchShortcutAction.ZoomIn
+        '-' -> return SkyWatchShortcutAction.ZoomOut
+      }
       return when (keyCode) {
         KeyEvent.KEYCODE_K -> SkyWatchShortcutAction.FocusSearch
         KeyEvent.KEYCODE_N -> SkyWatchShortcutAction.OpenNewWindow
         KeyEvent.KEYCODE_R -> SkyWatchShortcutAction.RefreshFeed
-        KeyEvent.KEYCODE_EQUALS, KeyEvent.KEYCODE_PLUS -> SkyWatchShortcutAction.ZoomIn
-        KeyEvent.KEYCODE_MINUS -> SkyWatchShortcutAction.ZoomOut
+        KeyEvent.KEYCODE_EQUALS, KeyEvent.KEYCODE_PLUS, KeyEvent.KEYCODE_NUMPAD_ADD ->
+          SkyWatchShortcutAction.ZoomIn
+        KeyEvent.KEYCODE_MINUS, KeyEvent.KEYCODE_NUMPAD_SUBTRACT ->
+          SkyWatchShortcutAction.ZoomOut
         else -> null
       }
     }
 
-    // Do not hijack letter/digit typing while user is entering a search query
+    // Do not hijack letter/digit/symbol typing while user is entering a search query
     if (isSearchFieldFocused) {
       return null
+    }
+
+    // Handle resolved Unicode symbols BEFORE physical US keycodes so international layouts
+    // (e.g. German QWERTZ where '+' is KEYCODE_RIGHT_BRACKET, '-' is KEYCODE_SLASH,
+    // '?' is Shift+KEYCODE_MINUS, '/' is Shift+KEYCODE_7) work naturally.
+    when (char) {
+      '+', '=' -> return SkyWatchShortcutAction.ZoomIn
+      '-' -> return SkyWatchShortcutAction.ZoomOut
+      '?' -> return SkyWatchShortcutAction.ToggleShortcutsHelp
+      '/' -> return SkyWatchShortcutAction.FocusSearch
     }
 
     return when (keyCode) {

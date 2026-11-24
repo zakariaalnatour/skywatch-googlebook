@@ -1,17 +1,19 @@
 package com.zakariaalnatour.skywatch.ui.map
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -34,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -42,18 +46,19 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.zakariaalnatour.skywatch.data.MapTileLoader
 import com.zakariaalnatour.skywatch.geo.GeoProjection
 import com.zakariaalnatour.skywatch.geo.GreatCircleCalculator
@@ -73,6 +78,7 @@ import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.hypot
+import kotlin.math.ln
 import kotlin.math.roundToInt
 
 @Composable
@@ -109,10 +115,15 @@ fun FlightRadarMap(
   var canvasSize by remember { mutableStateOf(IntSize.Zero) }
   var tileRevision by remember { mutableIntStateOf(0) }
   var hoverPointer by remember { mutableStateOf<Offset?>(null) }
+  var callsignBadgeSize by remember { mutableStateOf(IntSize.Zero) }
+  var hoverTooltipSize by remember { mutableStateOf(IntSize.Zero) }
 
   val latestViewport by rememberUpdatedState(viewport)
   val latestAircraft by rememberUpdatedState(aircraft)
   val latestSize by rememberUpdatedState(canvasSize)
+  val latestOnViewportChanged by rememberUpdatedState(onViewportChanged)
+  val latestOnSelectAircraft by rememberUpdatedState(onSelectAircraft)
+  val latestOnHoverAircraft by rememberUpdatedState(onHoverAircraft)
 
   val visibleTiles = remember(viewport, canvasSize) {
     GeoProjection.visibleTiles(
@@ -164,97 +175,126 @@ fun FlightRadarMap(
   Box(
     modifier = modifier
       .fillMaxSize()
+      .clipToBounds()
       .background(SkyWatchColors.ObsidianBg)
-      .onSizeChanged { canvasSize = it }
-      // Pan via mouse/trackpad drag
-      .pointerInput(Unit) {
-        detectDragGestures { change, dragAmount ->
-          change.consume()
-          val next = GeoProjection.panByScreenDelta(
-            viewport = latestViewport,
-            dxPx = dragAmount.x,
-            dyPx = dragAmount.y,
-          )
-          onViewportChanged(next, true)
-        }
-      }
-      // Click to select aircraft; double-click to zoom in around cursor
-      .pointerInput(Unit) {
-        detectTapGestures(
-          onTap = { tapOffset ->
-            val hit = findNearestAircraft(
-              pointer = tapOffset,
-              aircraft = latestAircraft,
-              viewport = latestViewport,
-              widthPx = latestSize.width.toFloat(),
-              heightPx = latestSize.height.toFloat(),
-              hitRadiusPx = 32f,
-            )
-            onSelectAircraft(hit?.hex)
-          },
-          onDoubleTap = { tapOffset ->
-            val next = GeoProjection.zoomAroundScreenPoint(
-              viewport = latestViewport,
-              newZoomRaw = latestViewport.zoom + 1.2f,
-              anchorScreenX = tapOffset.x,
-              anchorScreenY = tapOffset.y,
-              viewportWidthPx = latestSize.width.toFloat(),
-              viewportHeightPx = latestSize.height.toFloat(),
-            )
-            onViewportChanged(next, true)
-          },
-        )
-      }
-      // Trackpad scroll-wheel zoom + pointer hover inspection
-      .pointerInput(Unit) {
-        awaitPointerEventScope {
-          while (true) {
-            val event = awaitPointerEvent()
-            when (event.type) {
-              PointerEventType.Scroll -> {
-                val change = event.changes.firstOrNull() ?: continue
-                val scrollY = change.scrollDelta.y
-                if (scrollY != 0f) {
-                  val zoomDelta = (-scrollY * 0.35f).coerceIn(-0.9f, 0.9f)
-                  val next = GeoProjection.zoomAroundScreenPoint(
-                    viewport = latestViewport,
-                    newZoomRaw = latestViewport.zoom + zoomDelta,
-                    anchorScreenX = change.position.x,
-                    anchorScreenY = change.position.y,
-                    viewportWidthPx = latestSize.width.toFloat(),
-                    viewportHeightPx = latestSize.height.toFloat(),
-                  )
-                  onViewportChanged(next, false)
-                  change.consume()
-                }
-              }
-              PointerEventType.Move -> {
-                val pos = event.changes.firstOrNull()?.position
-                hoverPointer = pos
-                if (pos != null) {
-                  val hit = findNearestAircraft(
-                    pointer = pos,
-                    aircraft = latestAircraft,
-                    viewport = latestViewport,
-                    widthPx = latestSize.width.toFloat(),
-                    heightPx = latestSize.height.toFloat(),
-                    hitRadiusPx = 28f,
-                  )
-                  onHoverAircraft(hit?.hex)
-                }
-              }
-              PointerEventType.Exit -> {
-                hoverPointer = null
-                onHoverAircraft(null)
-              }
-              else -> Unit
+      .onSizeChanged { canvasSize = it },
+  ) {
+    // Core Geographic Radar Canvas (owns all map gestures so HUD overlays never conflict)
+    Canvas(
+      modifier = Modifier
+        .fillMaxSize()
+        .clipToBounds()
+        // Pan + pinch-to-zoom on map surface only
+        .pointerInput(Unit) {
+          detectTransformGestures { centroid, pan, zoomChange, _ ->
+            var next = latestViewport
+            var changed = false
+            if (pan != Offset.Zero) {
+              next = GeoProjection.panByScreenDelta(
+                viewport = next,
+                dxPx = pan.x,
+                dyPx = pan.y,
+              )
+              changed = true
+            }
+            if (
+              zoomChange != 1f &&
+              zoomChange.isFinite() &&
+              zoomChange > 0f &&
+              latestSize.width > 0 &&
+              latestSize.height > 0
+            ) {
+              val zoomDelta = (ln(zoomChange.toDouble()) / ln(2.0)).toFloat()
+              next = GeoProjection.zoomAroundScreenPoint(
+                viewport = next,
+                newZoomRaw = next.zoom + zoomDelta,
+                anchorScreenX = centroid.x,
+                anchorScreenY = centroid.y,
+                viewportWidthPx = latestSize.width.toFloat(),
+                viewportHeightPx = latestSize.height.toFloat(),
+              )
+              changed = true
+            }
+            if (changed) {
+              latestOnViewportChanged(next, true)
             }
           }
         }
-      },
-  ) {
-    // Core Geographic Radar Canvas
-    Canvas(modifier = Modifier.fillMaxSize()) {
+        // Click to select aircraft; double-click to zoom in around cursor
+        .pointerInput(Unit) {
+          detectTapGestures(
+            onTap = { tapOffset ->
+              val hit = findNearestAircraft(
+                pointer = tapOffset,
+                aircraft = latestAircraft,
+                viewport = latestViewport,
+                widthPx = latestSize.width.toFloat(),
+                heightPx = latestSize.height.toFloat(),
+                hitRadiusPx = 32f,
+              )
+              latestOnSelectAircraft(hit?.hex)
+            },
+            onDoubleTap = { tapOffset ->
+              val next = GeoProjection.zoomAroundScreenPoint(
+                viewport = latestViewport,
+                newZoomRaw = latestViewport.zoom + 1.0f,
+                anchorScreenX = tapOffset.x,
+                anchorScreenY = tapOffset.y,
+                viewportWidthPx = latestSize.width.toFloat(),
+                viewportHeightPx = latestSize.height.toFloat(),
+              )
+              latestOnViewportChanged(next, true)
+            },
+          )
+        }
+        // Trackpad scroll-wheel zoom + pointer hover inspection
+        .pointerInput(Unit) {
+          awaitPointerEventScope {
+            while (true) {
+              val event = awaitPointerEvent()
+              when (event.type) {
+                PointerEventType.Scroll -> {
+                  val change = event.changes.firstOrNull() ?: continue
+                  val scrollY = change.scrollDelta.y
+                  if (scrollY != 0f) {
+                    val zoomDelta = (-scrollY * 0.35f).coerceIn(-0.9f, 0.9f)
+                    val next = GeoProjection.zoomAroundScreenPoint(
+                      viewport = latestViewport,
+                      newZoomRaw = latestViewport.zoom + zoomDelta,
+                      anchorScreenX = change.position.x,
+                      anchorScreenY = change.position.y,
+                      viewportWidthPx = latestSize.width.toFloat(),
+                      viewportHeightPx = latestSize.height.toFloat(),
+                    )
+                    latestOnViewportChanged(next, false)
+                    change.consume()
+                  }
+                }
+                PointerEventType.Move -> {
+                  val pos = event.changes.firstOrNull()?.position
+                  hoverPointer = pos
+                  if (pos != null) {
+                    val hit = findNearestAircraft(
+                      pointer = pos,
+                      aircraft = latestAircraft,
+                      viewport = latestViewport,
+                      widthPx = latestSize.width.toFloat(),
+                      heightPx = latestSize.height.toFloat(),
+                      hitRadiusPx = 28f,
+                    )
+                    latestOnHoverAircraft(hit?.hex)
+                  }
+                }
+                PointerEventType.Exit -> {
+                  hoverPointer = null
+                  latestOnHoverAircraft(null)
+                }
+                else -> Unit
+              }
+            }
+          }
+        },
+    ) {
       // Read tileRevision so Compose redraws whenever a tile completes loading
       @Suppress("UNUSED_EXPRESSION")
       tileRevision
@@ -262,147 +302,149 @@ fun FlightRadarMap(
       val widthPx = size.width
       val heightPx = size.height
 
-      // 1. Background radar graticule (visible while tiles stream in)
-      drawRadarGraticule(viewport, widthPx, heightPx)
+      clipRect(left = 0f, top = 0f, right = widthPx, bottom = heightPx) {
+        // 1. Background radar graticule (visible while tiles stream in)
+        drawRadarGraticule(viewport, widthPx, heightPx)
 
-      // 2. Keyless Map Tiles: Esri World Dark Gray Base + Reference overlay (or OSM fallback)
-      for (tile in visibleTiles) {
-        val cached = tileLoader.getCached(tileLayer, tile.z, tile.x, tile.y)
-        if (cached != null) {
-          val dstOffset = IntOffset(floor(tile.screenLeft).toInt(), floor(tile.screenTop).toInt())
-          val drawSizeInt = ceil(tile.tileDrawSizePx).toInt() + 1
-          val dstSize = IntSize(drawSizeInt, drawSizeInt)
-          drawImage(
-            image = cached.base.asImageBitmap(),
-            dstOffset = dstOffset,
-            dstSize = dstSize,
-          )
-          cached.referenceOverlay?.let { refBitmap ->
+        // 2. Keyless Map Tiles: Esri World Dark Gray Base + Reference overlay (or OSM fallback)
+        for (tile in visibleTiles) {
+          val cached = tileLoader.getCached(tileLayer, tile.z, tile.x, tile.y)
+          if (cached != null) {
+            val dstOffset = IntOffset(floor(tile.screenLeft).toInt(), floor(tile.screenTop).toInt())
+            val drawSizeInt = ceil(tile.tileDrawSizePx).toInt() + 1
+            val dstSize = IntSize(drawSizeInt, drawSizeInt)
             drawImage(
-              image = refBitmap.asImageBitmap(),
+              image = cached.base.asImageBitmap(),
               dstOffset = dstOffset,
               dstSize = dstSize,
             )
+            cached.referenceOverlay?.let { refBitmap ->
+              drawImage(
+                image = refBitmap.asImageBitmap(),
+                dstOffset = dstOffset,
+                dstSize = dstSize,
+              )
+            }
           }
         }
-      }
 
-      // Subtle atmospheric dark tint over OSM when OSM layer is chosen so radar vectors pop
-      if (tileLayer == MapTileLayer.OPEN_STREET_MAP) {
-        drawRect(color = Color(0x55070C14))
-      }
+        // Subtle atmospheric dark tint over OSM when OSM layer is chosen so radar vectors pop
+        if (tileLayer == MapTileLayer.OPEN_STREET_MAP) {
+          drawRect(color = Color(0x55070C14))
+        }
 
-      // 3. Hub airport beacons
-      for (hub in FlightHubs.ALL) {
-        if (hub.feedMode != com.zakariaalnatour.skywatch.model.HubFeedMode.REGIONAL) continue
-        val pt = GeoProjection.latLonToScreen(hub.latitude, hub.longitude, viewport, widthPx, heightPx)
-        if (pt.x in -40f..(widthPx + 40f) && pt.y in -40f..(heightPx + 40f)) {
-          val isActive = hub.id == activeHub.id
-          val center = Offset(pt.x, pt.y)
-          drawCircle(
-            color = if (isActive) SkyWatchColors.RadarCyan.copy(alpha = 0.22f) else SkyWatchColors.TextMuted.copy(alpha = 0.12f),
-            radius = if (isActive) 18f else 9f,
-            center = center,
-          )
-          drawCircle(
-            color = if (isActive) SkyWatchColors.RadarCyan else SkyWatchColors.TextSecondary.copy(alpha = 0.7f),
-            radius = if (isActive) 4.5f else 3f,
-            center = center,
-          )
-          if (isActive) {
+        // 3. Hub airport beacons
+        for (hub in FlightHubs.ALL) {
+          if (hub.feedMode != com.zakariaalnatour.skywatch.model.HubFeedMode.REGIONAL) continue
+          val pt = GeoProjection.latLonToScreen(hub.latitude, hub.longitude, viewport, widthPx, heightPx)
+          if (pt.x in -40f..(widthPx + 40f) && pt.y in -40f..(heightPx + 40f)) {
+            val isActive = hub.id == activeHub.id
+            val center = Offset(pt.x, pt.y)
             drawCircle(
-              color = SkyWatchColors.RadarCyan.copy(alpha = 0.55f),
-              radius = 12f,
+              color = if (isActive) SkyWatchColors.RadarCyan.copy(alpha = 0.22f) else SkyWatchColors.TextMuted.copy(alpha = 0.12f),
+              radius = if (isActive) 18f else 9f,
               center = center,
-              style = Stroke(width = 1.4f),
             )
+            drawCircle(
+              color = if (isActive) SkyWatchColors.RadarCyan else SkyWatchColors.TextSecondary.copy(alpha = 0.7f),
+              radius = if (isActive) 4.5f else 3f,
+              center = center,
+            )
+            if (isActive) {
+              drawCircle(
+                color = SkyWatchColors.RadarCyan.copy(alpha = 0.55f),
+                radius = 12f,
+                center = center,
+                style = Stroke(width = 1.4f),
+              )
+            }
           }
         }
-      }
 
-      // 4. Great-circle route arc for selected flight
-      if (routeArcSegments != null) {
-        val (completedSegments, remainingSegments, airports) = routeArcSegments
-        for (segment in completedSegments) {
-          drawGeoPolyline(
-            points = segment,
-            viewport = viewport,
-            widthPx = widthPx,
-            heightPx = heightPx,
-            color = SkyWatchColors.RadarCyan,
-            strokeWidth = 3.2f,
-            dashed = false,
-          )
-        }
-        for (segment in remainingSegments) {
-          drawGeoPolyline(
-            points = segment,
-            viewport = viewport,
-            widthPx = widthPx,
-            heightPx = heightPx,
-            color = SkyWatchColors.AmberLow.copy(alpha = 0.85f),
-            strokeWidth = 2.4f,
-            dashed = true,
-          )
-        }
-        airports.first.geoPoint?.let { orig ->
-          val p = GeoProjection.latLonToScreen(orig.latitude, orig.longitude, viewport, widthPx, heightPx)
-          drawCircle(color = SkyWatchColors.EmeraldLive, radius = 7f, center = Offset(p.x, p.y))
-          drawCircle(color = Color.White, radius = 3f, center = Offset(p.x, p.y))
-        }
-        airports.second.geoPoint?.let { dst ->
-          val p = GeoProjection.latLonToScreen(dst.latitude, dst.longitude, viewport, widthPx, heightPx)
-          drawCircle(color = SkyWatchColors.AmberLow, radius = 7f, center = Offset(p.x, p.y))
-          drawCircle(color = Color.White, radius = 3f, center = Offset(p.x, p.y))
-        }
-      }
-
-      // 5. Live trails
-      if (showTrails) {
-        for (ac in aircraft) {
-          val track = trails[ac.hex] ?: continue
-          if (track.size < 2) continue
-          val isSelected = ac.hex == selectedHex
-          val color = SkyWatchColors.altitudeBandColor(
-            altitudeFt = ac.effectiveAltitudeFt,
-            onGround = ac.onGround,
-            isMilitary = ac.isMilitary,
-            isEmergency = ac.isEmergency,
-          )
-          val geoPoints = track.map { GeoPoint(it.latitude, it.longitude) }
-          val split = GreatCircleCalculator.splitSegmentsAtAntimeridian(geoPoints)
-          for (segment in split) {
+        // 4. Great-circle route arc for selected flight
+        if (routeArcSegments != null) {
+          val (completedSegments, remainingSegments, airports) = routeArcSegments
+          for (segment in completedSegments) {
             drawGeoPolyline(
               points = segment,
               viewport = viewport,
               widthPx = widthPx,
               heightPx = heightPx,
-              color = color.copy(alpha = if (isSelected) 0.92f else 0.42f),
-              strokeWidth = if (isSelected) 3.0f else 1.5f,
+              color = SkyWatchColors.RadarCyan,
+              strokeWidth = 3.2f,
               dashed = false,
             )
           }
-        }
-      }
-
-      // 6. Aircraft icons (draw unselected first, hovered & selected on top)
-      for (ac in aircraft) {
-        if (ac.hex == selectedHex || ac.hex == hoveredHex) continue
-        drawAircraftMarker(ac, viewport, widthPx, heightPx, isSelected = false, isHovered = false)
-      }
-      hoveredHex?.let { hex ->
-        if (hex != selectedHex) {
-          aircraft.firstOrNull { it.hex == hex }?.let { ac ->
-            drawAircraftMarker(ac, viewport, widthPx, heightPx, isSelected = false, isHovered = true)
+          for (segment in remainingSegments) {
+            drawGeoPolyline(
+              points = segment,
+              viewport = viewport,
+              widthPx = widthPx,
+              heightPx = heightPx,
+              color = SkyWatchColors.AmberLow.copy(alpha = 0.85f),
+              strokeWidth = 2.4f,
+              dashed = true,
+            )
+          }
+          airports.first.geoPoint?.let { orig ->
+            val p = GeoProjection.latLonToScreen(orig.latitude, orig.longitude, viewport, widthPx, heightPx)
+            drawCircle(color = SkyWatchColors.EmeraldLive, radius = 7f, center = Offset(p.x, p.y))
+            drawCircle(color = Color.White, radius = 3f, center = Offset(p.x, p.y))
+          }
+          airports.second.geoPoint?.let { dst ->
+            val p = GeoProjection.latLonToScreen(dst.latitude, dst.longitude, viewport, widthPx, heightPx)
+            drawCircle(color = SkyWatchColors.AmberLow, radius = 7f, center = Offset(p.x, p.y))
+            drawCircle(color = Color.White, radius = 3f, center = Offset(p.x, p.y))
           }
         }
-      }
-      selectedAircraft?.let { ac ->
-        drawAircraftMarker(ac, viewport, widthPx, heightPx, isSelected = true, isHovered = false)
+
+        // 5. Live trails
+        if (showTrails) {
+          for (ac in aircraft) {
+            val track = trails[ac.hex] ?: continue
+            if (track.size < 2) continue
+            val isSelected = ac.hex == selectedHex
+            val color = SkyWatchColors.altitudeBandColor(
+              altitudeFt = ac.effectiveAltitudeFt,
+              onGround = ac.onGround,
+              isMilitary = ac.isMilitary,
+              isEmergency = ac.isEmergency,
+            )
+            val geoPoints = track.map { GeoPoint(it.latitude, it.longitude) }
+            val split = GreatCircleCalculator.splitSegmentsAtAntimeridian(geoPoints)
+            for (segment in split) {
+              drawGeoPolyline(
+                points = segment,
+                viewport = viewport,
+                widthPx = widthPx,
+                heightPx = heightPx,
+                color = color.copy(alpha = if (isSelected) 0.92f else 0.42f),
+                strokeWidth = if (isSelected) 3.0f else 1.5f,
+                dashed = false,
+              )
+            }
+          }
+        }
+
+        // 6. Aircraft icons (draw unselected first, hovered & selected on top)
+        for (ac in aircraft) {
+          if (ac.hex == selectedHex || ac.hex == hoveredHex) continue
+          drawAircraftMarker(ac, viewport, widthPx, heightPx, isSelected = false, isHovered = false)
+        }
+        hoveredHex?.let { hex ->
+          if (hex != selectedHex) {
+            aircraft.firstOrNull { it.hex == hex }?.let { ac ->
+              drawAircraftMarker(ac, viewport, widthPx, heightPx, isSelected = false, isHovered = true)
+            }
+          }
+        }
+        selectedAircraft?.let { ac ->
+          drawAircraftMarker(ac, viewport, widthPx, heightPx, isSelected = true, isHovered = false)
+        }
       }
     }
 
-    // Selected aircraft crisp floating callsign badge right on the map
+    // Selected aircraft crisp floating callsign badge clamped inside map viewport bounds
     if (selectedAircraft != null && canvasSize.width > 0 && canvasSize.height > 0) {
       val pt = GeoProjection.latLonToScreen(
         selectedAircraft.latitude,
@@ -411,15 +453,23 @@ fun FlightRadarMap(
         canvasSize.width.toFloat(),
         canvasSize.height.toFloat(),
       )
-      if (pt.x in 20f..(canvasSize.width - 20f) && pt.y in 20f..(canvasSize.height - 20f)) {
-        val density = LocalDensity.current
-        val xOffset = with(density) { (pt.x + 18f).roundToInt() }
-        val yOffset = with(density) { (pt.y - 26f).roundToInt() }
+      if (pt.x in 0f..canvasSize.width.toFloat() && pt.y in 0f..canvasSize.height.toFloat()) {
+        val marginPx = 8
+        val badgeW = if (callsignBadgeSize.width > 0) callsignBadgeSize.width else 180
+        val badgeH = if (callsignBadgeSize.height > 0) callsignBadgeSize.height else 28
+        val maxX = (canvasSize.width - badgeW - marginPx).coerceAtLeast(marginPx)
+        val maxY = (canvasSize.height - badgeH - marginPx).coerceAtLeast(marginPx)
+        val clampedX = (pt.x + 18f).roundToInt().coerceIn(marginPx, maxX)
+        val clampedY = (pt.y - 26f).roundToInt().coerceIn(marginPx, maxY)
+
         Surface(
-          modifier = Modifier.offset { IntOffset(xOffset, yOffset) },
+          modifier = Modifier
+            .zIndex(1f)
+            .offset { IntOffset(clampedX, clampedY) }
+            .onSizeChanged { callsignBadgeSize = it },
           shape = RoundedCornerShape(6.dp),
           color = SkyWatchColors.SurfaceElevated.copy(alpha = 0.94f),
-          border = androidx.compose.foundation.BorderStroke(1.dp, SkyWatchColors.RadarCyan),
+          border = BorderStroke(1.dp, SkyWatchColors.RadarCyan),
         ) {
           Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -446,20 +496,29 @@ fun FlightRadarMap(
       }
     }
 
-    // Desktop Hover Tooltip when pointing at an unselected aircraft with mouse/trackpad
+    // Desktop Hover Tooltip clamped strictly inside map viewport bounds
     val hoveredAc = remember(aircraft, hoveredHex, selectedHex) {
       if (hoveredHex == null || hoveredHex == selectedHex) null
       else aircraft.firstOrNull { it.hex == hoveredHex }
     }
-    if (hoveredAc != null && hoverPointer != null) {
+    if (hoveredAc != null && hoverPointer != null && canvasSize.width > 0 && canvasSize.height > 0) {
       val pos = hoverPointer!!
+      val marginPx = 8
+      val tooltipW = if (hoverTooltipSize.width > 0) hoverTooltipSize.width else 220
+      val tooltipH = if (hoverTooltipSize.height > 0) hoverTooltipSize.height else 28
+      val maxX = (canvasSize.width - tooltipW - marginPx).coerceAtLeast(marginPx)
+      val maxY = (canvasSize.height - tooltipH - marginPx).coerceAtLeast(marginPx)
+      val clampedX = (pos.x + 16f).roundToInt().coerceIn(marginPx, maxX)
+      val clampedY = (pos.y - 34f).roundToInt().coerceIn(marginPx, maxY)
+
       Surface(
-        modifier = Modifier.offset {
-          IntOffset((pos.x + 16f).roundToInt(), (pos.y - 34f).roundToInt())
-        },
+        modifier = Modifier
+          .zIndex(1f)
+          .offset { IntOffset(clampedX, clampedY) }
+          .onSizeChanged { hoverTooltipSize = it },
         shape = RoundedCornerShape(6.dp),
         color = SkyWatchColors.ObsidianBg.copy(alpha = 0.92f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, SkyWatchColors.BorderSubtle),
+        border = BorderStroke(1.dp, SkyWatchColors.BorderSubtle),
       ) {
         Text(
           text = buildString {
@@ -479,13 +538,14 @@ fun FlightRadarMap(
     Column(
       modifier = Modifier
         .align(Alignment.TopStart)
+        .zIndex(1f)
         .padding(12.dp),
       verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
       Surface(
         shape = RoundedCornerShape(10.dp),
         color = SkyWatchColors.SurfacePanel.copy(alpha = 0.88f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, SkyWatchColors.BorderSubtle),
+        border = BorderStroke(1.dp, SkyWatchColors.BorderSubtle),
       ) {
         Row(
           modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -520,7 +580,7 @@ fun FlightRadarMap(
         Surface(
           shape = RoundedCornerShape(8.dp),
           color = SkyWatchColors.AmberLow.copy(alpha = 0.18f),
-          border = androidx.compose.foundation.BorderStroke(1.dp, SkyWatchColors.AmberLow.copy(alpha = 0.65f)),
+          border = BorderStroke(1.dp, SkyWatchColors.AmberLow.copy(alpha = 0.65f)),
         ) {
           Text(
             text = statusBanner,
@@ -535,7 +595,7 @@ fun FlightRadarMap(
         Surface(
           shape = RoundedCornerShape(8.dp),
           color = SkyWatchColors.AlertCrimson.copy(alpha = 0.22f),
-          border = androidx.compose.foundation.BorderStroke(1.dp, SkyWatchColors.AlertCrimson.copy(alpha = 0.75f)),
+          border = BorderStroke(1.dp, SkyWatchColors.AlertCrimson.copy(alpha = 0.75f)),
         ) {
           Text(
             text = errorMessage,
@@ -547,17 +607,27 @@ fun FlightRadarMap(
       }
     }
 
-    // Floating Top-Right Desktop Radar Controls
+    // Floating Top-Right Desktop Radar Controls (42dp Zoom Pill + 40dp Tool Buttons)
     Column(
       modifier = Modifier
         .align(Alignment.TopEnd)
+        .zIndex(1f)
         .padding(12.dp),
-      verticalArrangement = Arrangement.spacedBy(6.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      MapControlButton(icon = SkyWatchIcons.Add, contentDescription = "Zoom In (+)", onClick = onZoomIn)
-      MapControlButton(icon = SkyWatchIcons.Remove, contentDescription = "Zoom Out (-)", onClick = onZoomOut)
-      MapControlButton(icon = SkyWatchIcons.MyLocation, contentDescription = "Recenter Hub", onClick = onRecenterHub)
+      ZoomControlPill(
+        zoom = viewport.zoom,
+        onZoomIn = onZoomIn,
+        onRecenterHub = onRecenterHub,
+        onZoomOut = onZoomOut,
+      )
       Spacer(modifier = Modifier.height(2.dp))
+      MapControlButton(
+        icon = SkyWatchIcons.MyLocation,
+        contentDescription = "Recenter Hub",
+        onClick = onRecenterHub,
+      )
       MapControlButton(
         icon = SkyWatchIcons.Layers,
         contentDescription = "Toggle Map Layer (M)",
@@ -593,10 +663,11 @@ fun FlightRadarMap(
     Surface(
       modifier = Modifier
         .align(Alignment.BottomStart)
+        .zIndex(1f)
         .padding(12.dp),
       shape = RoundedCornerShape(8.dp),
       color = SkyWatchColors.SurfacePanel.copy(alpha = 0.86f),
-      border = androidx.compose.foundation.BorderStroke(1.dp, SkyWatchColors.BorderSubtle),
+      border = BorderStroke(1.dp, SkyWatchColors.BorderSubtle),
     ) {
       Column(
         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -625,6 +696,70 @@ fun FlightRadarMap(
 }
 
 @Composable
+private fun ZoomControlPill(
+  zoom: Float,
+  onZoomIn: () -> Unit,
+  onRecenterHub: () -> Unit,
+  onZoomOut: () -> Unit,
+) {
+  Surface(
+    modifier = Modifier.width(42.dp),
+    shape = RoundedCornerShape(10.dp),
+    color = SkyWatchColors.SurfacePanel.copy(alpha = 0.94f),
+    border = BorderStroke(1.dp, SkyWatchColors.BorderSubtle),
+  ) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+      Box(
+        modifier = Modifier
+          .size(42.dp)
+          .clickable(onClick = onZoomIn),
+        contentAlignment = Alignment.Center,
+      ) {
+        Icon(
+          imageVector = SkyWatchIcons.Add,
+          contentDescription = "Zoom In (+)",
+          tint = SkyWatchColors.TextPrimary,
+          modifier = Modifier.size(22.dp),
+        )
+      }
+      HorizontalDivider(color = SkyWatchColors.BorderSubtle, thickness = 1.dp)
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .height(34.dp)
+          .background(SkyWatchColors.SurfaceElevated.copy(alpha = 0.72f))
+          .clickable(onClick = onRecenterHub),
+        contentAlignment = Alignment.Center,
+      ) {
+        Text(
+          text = String.format(Locale.US, "Z%.1f", zoom),
+          style = MaterialTheme.typography.labelSmall.copy(
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+          ),
+          color = SkyWatchColors.RadarCyanBright,
+          maxLines = 1,
+        )
+      }
+      HorizontalDivider(color = SkyWatchColors.BorderSubtle, thickness = 1.dp)
+      Box(
+        modifier = Modifier
+          .size(42.dp)
+          .clickable(onClick = onZoomOut),
+        contentAlignment = Alignment.Center,
+      ) {
+        Icon(
+          imageVector = SkyWatchIcons.Remove,
+          contentDescription = "Zoom Out (-)",
+          tint = SkyWatchColors.TextPrimary,
+          modifier = Modifier.size(22.dp),
+        )
+      }
+    }
+  }
+}
+
+@Composable
 private fun MapControlButton(
   icon: ImageVector,
   contentDescription: String,
@@ -633,16 +768,16 @@ private fun MapControlButton(
 ) {
   Box(
     modifier = Modifier
-      .size(34.dp)
-      .clip(RoundedCornerShape(8.dp))
+      .size(40.dp)
+      .clip(RoundedCornerShape(9.dp))
       .background(
         if (active) SkyWatchColors.SurfaceCardSelected.copy(alpha = 0.95f)
-        else SkyWatchColors.SurfacePanel.copy(alpha = 0.88f),
+        else SkyWatchColors.SurfacePanel.copy(alpha = 0.92f),
       )
       .border(
         width = 1.dp,
         color = if (active) SkyWatchColors.RadarCyan else SkyWatchColors.BorderSubtle,
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(9.dp),
       )
       .clickable(onClick = onClick),
     contentAlignment = Alignment.Center,
@@ -651,7 +786,7 @@ private fun MapControlButton(
       imageVector = icon,
       contentDescription = contentDescription,
       tint = if (active) SkyWatchColors.RadarCyanBright else SkyWatchColors.TextPrimary,
-      modifier = Modifier.size(18.dp),
+      modifier = Modifier.size(20.dp),
     )
   }
 }

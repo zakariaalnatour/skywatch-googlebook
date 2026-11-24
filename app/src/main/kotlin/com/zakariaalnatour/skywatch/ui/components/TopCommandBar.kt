@@ -27,11 +27,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.zakariaalnatour.skywatch.model.FeedSource
 import com.zakariaalnatour.skywatch.model.FlightHub
 import com.zakariaalnatour.skywatch.model.FlightHubs
@@ -48,7 +50,11 @@ fun TopCommandBar(
   latencyMs: Long?,
   isLoading: Boolean,
   continueOnEnabled: Boolean,
+  flightsPaneVisible: Boolean,
+  inspectorPaneVisible: Boolean,
   onSelectHub: (FlightHub) -> Unit,
+  onToggleFlightsPane: () -> Unit,
+  onToggleInspectorPane: () -> Unit,
   onToggleContinueOn: () -> Unit,
   onOpenNewWindow: () -> Unit,
   onShowShortcuts: () -> Unit,
@@ -57,6 +63,8 @@ fun TopCommandBar(
   Column(
     modifier = modifier
       .fillMaxWidth()
+      .zIndex(2f)
+      .clipToBounds()
       .background(SkyWatchColors.SurfacePanel),
   ) {
     // Primary Desktop Header Strip
@@ -139,11 +147,32 @@ fun TopCommandBar(
         }
       }
 
-      // Desktop Actions: Continue On, Multi-Instance Window, Keyboard Shortcuts
+      // Desktop Actions: Panel Toggles, Continue On, Multi-Instance Window, Keyboard Shortcuts
       Row(
+        modifier = Modifier.horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
       ) {
+        CommandActionChip(
+          icon = SkyWatchIcons.SidebarList,
+          label = "Flights",
+          active = flightsPaneVisible,
+          accentColor = SkyWatchColors.RadarCyan,
+          onClick = onToggleFlightsPane,
+        )
+        CommandActionChip(
+          icon = SkyWatchIcons.InspectorPanel,
+          label = "Inspector",
+          active = inspectorPaneVisible,
+          accentColor = SkyWatchColors.RadarCyan,
+          onClick = onToggleInspectorPane,
+        )
+        Box(
+          modifier = Modifier
+            .width(1.dp)
+            .height(18.dp)
+            .background(SkyWatchColors.BorderSubtle),
+        )
         CommandActionChip(
           icon = SkyWatchIcons.Devices,
           label = if (continueOnEnabled) "Continue On" else "Handoff Off",

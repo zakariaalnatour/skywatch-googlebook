@@ -378,6 +378,30 @@ object SkyWatchIcons {
     }
   }
 
+  val SidebarList: ImageVector by lazy {
+    icon("SidebarList") {
+      path(fill = SolidColor(Color.Black)) {
+        moveTo(3f, 4f); horizontalLineToRelative(18f); verticalLineToRelative(2f); horizontalLineTo(3f); close()
+        moveTo(3f, 11f); horizontalLineToRelative(18f); verticalLineToRelative(2f); horizontalLineTo(3f); close()
+        moveTo(3f, 18f); horizontalLineToRelative(18f); verticalLineToRelative(2f); horizontalLineTo(3f); close()
+      }
+    }
+  }
+
+  val InspectorPanel: ImageVector by lazy {
+    icon("InspectorPanel") {
+      path(fill = SolidColor(Color.Black)) {
+        moveTo(19f, 3f); horizontalLineTo(5f)
+        curveTo(3.9f, 3f, 3f, 3.9f, 3f, 5f); verticalLineToRelative(14f)
+        curveToRelative(0f, 1.1f, 0.9f, 2f, 2f, 2f); horizontalLineToRelative(14f)
+        curveToRelative(1.1f, 0f, 2f, -0.9f, 2f, -2f); verticalLineTo(5f)
+        curveToRelative(0f, -1.1f, -0.9f, -2f, -2f, -2f); close()
+        moveTo(13f, 19f); horizontalLineTo(5f); verticalLineTo(5f); horizontalLineToRelative(8f); close()
+        moveTo(19f, 19f); horizontalLineToRelative(-4f); verticalLineTo(5f); horizontalLineToRelative(4f); close()
+      }
+    }
+  }
+
   private inline fun icon(name: String, block: ImageVector.Builder.() -> Unit): ImageVector =
     ImageVector.Builder(
       name = name,

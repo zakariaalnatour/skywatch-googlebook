@@ -29,6 +29,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -72,6 +73,7 @@ fun FlightInspectorPane(
   Column(
     modifier = modifier
       .fillMaxHeight()
+      .clipToBounds()
       .background(SkyWatchColors.SurfacePanel)
       .verticalScroll(rememberScrollState())
       .padding(12.dp),

@@ -35,4 +35,4 @@ A native **Googlebook OS (Android 17 / API 37)** live flight tracker built with 
 
 ## Download & Install on Googlebook
 
-Grab `SkyWatch-Googlebook-v1.0.0.apk` from the [`v1.0.0` GitHub Release](https://github.com/zakariaalnatour/skywatch-googlebook/releases/tag/v1.0.0).
+Grab `SkyWatch-Googlebook-v1.1.0.apk` from the [`v1.1.0` GitHub Release](https://github.com/zakariaalnatour/skywatch-googlebook/releases/tag/v1.1.0).
